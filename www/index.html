@@ -154,37 +154,63 @@ function parseKml(text) {
   const doc = new DOMParser().parseFromString(text, 'text/xml');
   if (doc.getElementsByTagName('parsererror').length) throw new Error('To nie wygląda na poprawny plik KML.');
   const v14 = new Set(), v17 = new Set();
-  const st = { placemarks: 0, single14: 0, single17: 0, filled: 0, skipped: 0 };
+  const st = { placemarks: 0, filled: 0, skipped: 0 };
   const W14 = 360 / N(14), W17 = 360 / N(17);
   const near = (a, b) => Math.abs(a - b) < b * 0.2;
 
+  // Wypełnia wielokąt (z dziurami) kafelkami metodą linii skanowania: szybko nawet dla dziesiątek tysięcy kafelków.
+  function fillPolygon(poly, z, set) {
+    const rings = [];
+    const o = parseRing(poly.getElementsByTagName('outerBoundaryIs')[0]);
+    if (!o || o.length < 3) return 0;
+    rings.push(o);
+    for (const ib of poly.getElementsByTagName('innerBoundaryIs')) { const h = parseRing(ib); if (h && h.length >= 3) rings.push(h); }
+    const n = N(z);
+    const toX = lon => (lon + 180) / 360 * n;
+    const toY = lat => { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n; };
+    const rows = new Map();
+    for (const ring of rings) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const ax = toX(a[0]), ay = toY(a[1]), bx = toX(b[0]), by = toY(b[1]);
+        if (ay === by) continue;
+        const lo = Math.min(ay, by), hi = Math.max(ay, by);
+        for (let y = Math.ceil(lo - 0.5); y < Math.ceil(hi - 0.5); y++) {
+          const xc = ax + (y + 0.5 - ay) * (bx - ax) / (by - ay);
+          let arr = rows.get(y); if (!arr) rows.set(y, arr = []);
+          arr.push(xc);
+        }
+      }
+    }
+    let added = 0;
+    for (const [y, xs] of rows) {
+      xs.sort((p, q) => p - q);
+      for (let i = 0; i + 1 < xs.length; i += 2) {
+        const x0 = Math.ceil(xs[i] - 0.5), x1 = Math.ceil(xs[i + 1] - 0.5) - 1;
+        for (let x = x0; x <= x1; x++) { set.add(x * n + y); added++; }
+      }
+    }
+    return added;
+  }
+
   function handlePoly(poly, label) {
-    const outer = parseRing(poly.getElementsByTagName('outerBoundaryIs')[0]);
-    if (!outer || outer.length < 3) return;
-    let minLon = 1e9, maxLon = -1e9, minLat = 1e9, maxLat = -1e9;
-    for (const [lon, lat] of outer) {
-      if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
-      if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+    let z = /inho/.test(label) ? 17 : (/squadrat/.test(label) ? 14 : 0);
+    if (!z) {
+      // obiekt bez rozpoznawalnej nazwy: rozpoznajemy po szerokości pojedynczego kafelka
+      const outer = parseRing(poly.getElementsByTagName('outerBoundaryIs')[0]);
+      if (!outer || outer.length < 3) return;
+      let minLon = 1e9, maxLon = -1e9;
+      for (const [lon] of outer) { if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon; }
+      const w = maxLon - minLon;
+      z = near(w, W17) ? 17 : 14;
     }
-    const w = maxLon - minLon, cx = (minLon + maxLon) / 2, cy = (minLat + maxLat) / 2;
-    if (near(w, W14)) { v14.add(tkey(lon2x(cx, 14), lat2y(cy, 14), 14)); st.single14++; return; }
-    if (near(w, W17)) { v17.add(tkey(lon2x(cx, 17), lat2y(cy, 17), 17)); st.single17++; return; }
-    if (/yard|über|uber/.test(label)) { st.skipped++; return; }
-    const z = /inho/.test(label) ? 17 : 14;
-    const x0 = lon2x(minLon, z), x1 = lon2x(maxLon, z), y0 = lat2y(maxLat, z), y1 = lat2y(minLat, z);
-    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 4e6) { st.skipped++; return; }
-    const holes = [];
-    for (const ib of poly.getElementsByTagName('innerBoundaryIs')) { const h = parseRing(ib); if (h) holes.push(h); }
-    const set = z === 17 ? v17 : v14;
-    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
-      const lon = x2lon(x + .5, z), lat = y2lat(y + .5, z);
-      if (inRing(outer, lon, lat) && !holes.some(h => inRing(h, lon, lat))) { set.add(tkey(x, y, z)); st.filled++; }
-    }
+    st.filled += fillPolygon(poly, z, z === 17 ? v17 : v14);
   }
 
   for (const pm of doc.getElementsByTagName('Placemark')) {
     st.placemarks++;
     const label = (folderName(pm) + ' ' + childText(pm, 'name')).toLowerCase();
+    if (/yard|über|uber/.test(label)) { st.skipped++; continue; }
     for (const poly of pm.getElementsByTagName('Polygon')) handlePoly(poly, label);
   }
   // squadratinho leży zawsze wewnątrz odwiedzonego squadrata, ale nie odwrotnie: nic nie dopisujemy
