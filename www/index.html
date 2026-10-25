@@ -63,6 +63,8 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
 #msg{margin:8px 0 0;font-size:13px;color:var(--muted)}
 #msg.err{color:var(--warn)}
 [hidden]{display:none!important}
+.vh{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+.lbl{display:flex;align-items:center;justify-content:center;cursor:pointer;box-sizing:border-box;text-align:center;user-select:none}
 </style>
 </head>
 <body>
@@ -82,7 +84,7 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
     <div class="totals">Razem: <b id="t14">0</b> squadrats · <b id="t17">0</b> squadratinhos</div>
     <div class="row">
       <button id="go" class="primary">Start</button>
-      <button id="imp" class="sec">Wgraj KML</button>
+      <label id="imp" class="sec lbl" for="file">Wgraj KML</label>
     </div>
     <p id="msg">Wgraj plik KML ze Squadrats (Map → Download KML), potem naciśnij Start.</p>
     <details>
@@ -102,7 +104,7 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
       </div>
     </details>
   </section>
-  <input type="file" id="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml,text/xml" hidden>
+  <input type="file" id="file" class="vh">
 </div>
 
 <!-- CORE: matematyka kafelków i parser KML (bez zależności od mapy) -->
@@ -422,8 +424,9 @@ async function importKml(file) {
     msg(`Wczytano ${fmt(v14.size)} squadrats i ${fmt(v17.size)} squadratinhos (${fmt(stats.placemarks)} obiektów w pliku${stats.skipped ? ', pominięto ' + stats.skipped + ' dużych wielokątów' : ''}).`);
   } catch (e) { msg(e.message || 'Nie udało się wczytać pliku.', true); }
 }
-$('imp').onclick = () => $('file').click();
-$('file').onchange = e => { const f = e.target.files[0]; if (f) importKml(f); e.target.value = ''; };
+$('file').addEventListener('change', e => { const f = e.target.files[0]; if (f) { msg('Wybrano plik: ' + f.name + ' (' + Math.round(f.size / 1024) + ' KB)'); importKml(f); } e.target.value = ''; });
+window.addEventListener('error', e => msg('Błąd aplikacji: ' + e.message, true));
+window.addEventListener('unhandledrejection', e => msg('Błąd aplikacji: ' + (e.reason && e.reason.message || e.reason), true));
 $('go').onclick = () => S.tracking ? stop() : start();
 $('locate').onclick = () => { S.follow = true; if (S.pos) map.setView([S.pos.lat, S.pos.lon], Math.max(map.getZoom(), 15)); };
 $('sync').onclick = async () => {
