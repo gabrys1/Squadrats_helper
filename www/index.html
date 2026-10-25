@@ -73,7 +73,7 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony · wersja 1.2</div>
+  <div id="status">GPS wyłączony · wersja 1.3</div>
   <pre id="dbg"></pre>
   <script>
     (function () {
@@ -347,8 +347,10 @@ function beep(freqs) {
 
 /* ---------- GPS ---------- */
 const NATIVE = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform());
-const BG = NATIVE ? Capacitor.registerPlugin('BackgroundGeolocation') : null;
-const LN = NATIVE ? Capacitor.registerPlugin('LocalNotifications') : null;
+// W natywnej aplikacji bez bundlera window.Capacitor nie ma registerPlugin, ale ma Plugins.
+const plug = n => { try { return Capacitor.registerPlugin ? Capacitor.registerPlugin(n) : Capacitor.Plugins[n]; } catch (e) { dbg('Wtyczka ' + n + ': ' + e.message); return null; } };
+const BG = NATIVE ? plug('BackgroundGeolocation') : null;
+const LN = NATIVE ? plug('LocalNotifications') : null;
 const GOOD_ACC = 50;
 function hav(a, b) {
   const R = 6371000, p = Math.PI / 180, dLat = (b.lat - a.lat) * p, dLon = (b.lon - a.lon) * p;
@@ -444,7 +446,7 @@ function stop() {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.2');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.3');
   if (was) msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
   clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] });
 }
