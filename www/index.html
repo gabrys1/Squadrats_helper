@@ -71,7 +71,7 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony</div>
+  <div id="status">GPS wyłączony · wersja 1.1</div>
   <div id="banner" hidden></div>
   <button id="locate" aria-label="Wyśrodkuj na mojej pozycji">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
@@ -427,7 +427,7 @@ function stop() {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.1');
   if (was) msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
   clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] });
 }
@@ -437,7 +437,10 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 async function importKml(file) {
   msg('Wczytuję plik…');
   try {
-    const { v14, v17, stats } = parseKml(await file.text());
+    const text = await file.text();
+    msg('Odczytano ' + Math.round(text.length / 1024) + ' KB. Przetwarzam kafelki…');
+    await new Promise(r => setTimeout(r, 50));
+    const { v14, v17, stats } = parseKml(text);
     if (!v14.size && !v17.size) throw new Error('W pliku nie znalazłem żadnych kafelków. Czy to na pewno KML ze Squadrats?');
     S.v14 = v14; S.v17 = v17;
     for (const k of [...S.n14]) if (v14.has(k)) S.n14.delete(k);
