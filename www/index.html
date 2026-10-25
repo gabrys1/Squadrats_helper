@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#101615">
+<title>Squadrats Live</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<style>
+/* Układ: mapa na cały ekran, pigułka statusu u góry, dolny panel z licznikami i przyciskami. */
+:root{
+  --bg:#f2f5f3; --panel:rgba(255,255,255,.94); --fg:#13201c; --muted:#5b6a65; --line:#d3dbd7;
+  --seen:#0b7a75; --seen17:#2f7fd1; --new:#e8590c; --btn:#13201c; --btnfg:#ffffff; --warn:#b3261e;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101615; --panel:rgba(22,31,29,.95); --fg:#e8efec; --muted:#93a39d; --line:#2b3733;
+  --seen:#35c2b8; --seen17:#6aa8ee; --new:#ff8a3d; --btn:#e8efec; --btnfg:#101615; --warn:#ff8a80; color-scheme:dark}}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+#app{position:fixed;inset:0}
+#map{position:absolute;inset:0;background:#d9dedb}
+#ov{position:absolute;inset:0;pointer-events:none;z-index:450}
+.leaflet-top.leaflet-right{margin-top:calc(env(safe-area-inset-top,0px) + 8px)}
+#status{position:absolute;z-index:800;left:max(12px,env(safe-area-inset-left,0px));top:calc(env(safe-area-inset-top,0px) + 10px);
+  background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font:600 12px var(--mono);max-width:calc(100% - 90px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#status.warn{color:var(--warn)}
+#banner{position:absolute;z-index:900;left:50%;top:calc(env(safe-area-inset-top,0px) + 56px);transform:translateX(-50%);
+  background:var(--new);color:#fff;border-radius:14px;padding:12px 20px;text-align:center;box-shadow:0 8px 28px rgba(0,0,0,.3);max-width:calc(100% - 32px)}
+#banner b{display:block;font:700 30px/1 var(--display);letter-spacing:.02em;text-transform:uppercase}
+#banner span{font-size:13px;opacity:.95}
+#banner.sqh{background:var(--seen17)}
+#banner.pop{animation:pop .35s ease-out}
+@keyframes pop{from{transform:translateX(-50%) scale(.85);opacity:0}to{transform:translateX(-50%) scale(1);opacity:1}}
+@media (prefers-reduced-motion:reduce){#banner.pop{animation:none}}
+#locate{position:absolute;z-index:800;right:max(12px,env(safe-area-inset-right,0px));bottom:calc(var(--sheet-h,230px) + 12px);width:46px;height:46px;border-radius:50%;
+  border:1px solid var(--line);background:var(--panel);color:var(--fg);display:grid;place-items:center;cursor:pointer}
+#sheet{position:absolute;z-index:850;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);border-radius:18px 18px 0 0;
+  padding:12px max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  max-height:70%;overflow:auto;backdrop-filter:blur(8px)}
+.counters{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.counters div{border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.counters span{display:block;font:700 44px/1 var(--display);font-variant-numeric:tabular-nums}
+.counters label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+#c14w{color:var(--new)} #c17w{color:var(--seen17)}
+.totals{margin:10px 0;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.totals b{color:var(--fg)}
+.row{display:flex;gap:8px}
+button{font:inherit;cursor:pointer}
+.primary,.sec{flex:1;min-height:48px;border-radius:12px;border:1px solid var(--btn);font-weight:700}
+.primary{background:var(--btn);color:var(--btnfg)}
+.primary.on{background:var(--warn);border-color:var(--warn);color:#fff}
+.sec{background:transparent;color:var(--fg);border-color:var(--line)}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--seen17);outline-offset:2px}
+details{margin-top:10px}
+summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
+.opts{display:grid;gap:6px;padding:6px 0}
+.opts label{display:flex;gap:10px;align-items:center;min-height:32px}
+.opts button{margin-top:6px;min-height:40px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
+#msg{margin:8px 0 0;font-size:13px;color:var(--muted)}
+#msg.err{color:var(--warn)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <canvas id="ov"></canvas>
+  <div id="status">GPS wyłączony</div>
+  <div id="banner" hidden></div>
+  <button id="locate" aria-label="Wyśrodkuj na mojej pozycji">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+  </button>
+  <section id="sheet">
+    <div class="counters">
+      <div><span id="c14n">0</span><label>Nowe squadrats</label></div>
+      <div><span id="c17n">0</span><label>Nowe squadratinhos</label></div>
+    </div>
+    <div class="totals">Razem: <b id="t14">0</b> squadrats · <b id="t17">0</b> squadratinhos</div>
+    <div class="row">
+      <button id="go" class="primary">Start</button>
+      <button id="imp" class="sec">Wgraj KML</button>
+    </div>
+    <p id="msg">Wgraj plik KML ze Squadrats (Map → Download KML), potem naciśnij Start.</p>
+    <details>
+      <summary>Ustawienia i legenda</summary>
+      <div class="opts">
+        <label><input type="checkbox" id="o17" checked> Pokaż squadratinhos</label>
+        <label><input type="checkbox" id="ogrid" checked> Pokaż siatkę</label>
+        <label><input type="checkbox" id="osound" checked> Dźwięk przy nowym kafelku</label>
+        <label><input type="checkbox" id="ovib" checked> Wibracja</label>
+        <label><input type="checkbox" id="owake" checked> Nie wygaszaj ekranu</label>
+        <button id="sync">Oznacz nowe jako już wgrane do Squadrats</button>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--seen)"></i>Twoje squadrats</span>
+        <span><i style="background:var(--seen17)"></i>Twoje squadratinhos</span>
+        <span><i style="background:var(--new)"></i>Zdobyte teraz</span>
+      </div>
+    </details>
+  </section>
+  <input type="file" id="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml,text/xml" hidden>
+</div>
+
+<!-- CORE: matematyka kafelków i parser KML (bez zależności od mapy) -->
+<script id="core">
+const N = z => Math.pow(2, z);
+const lon2x = (lon, z) => Math.floor((lon + 180) / 360 * N(z));
+const lat2y = (lat, z) => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * N(z)); };
+const x2lon = (x, z) => x / N(z) * 360 - 180;
+const y2lat = (y, z) => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / N(z)))) * 180 / Math.PI;
+const tkey = (x, y, z) => x * N(z) + y;
+const tunkey = (k, z) => { const n = N(z); const x = Math.floor(k / n); return [x, k - x * n]; };
+
+function inRing(ring, lon, lat) {
+  let c = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+function childText(el, name) {
+  for (const c of el.children) if (c.localName === name) return (c.textContent || '').trim();
+  return '';
+}
+function folderName(pm) {
+  let p = pm.parentNode;
+  while (p && p.nodeType === 1) {
+    if (p.localName === 'Folder' || p.localName === 'Document') { const n = childText(p, 'name'); if (n) return n; }
+    p = p.parentNode;
+  }
+  return '';
+}
+function parseRing(el) {
+  if (!el) return null;
+  const co = el.getElementsByTagName('coordinates')[0];
+  if (!co) return null;
+  const pts = [];
+  for (const s of co.textContent.trim().split(/\s+/)) {
+    const a = s.split(',');
+    const lon = parseFloat(a[0]), lat = parseFloat(a[1]);
+    if (isFinite(lon) && isFinite(lat)) pts.push([lon, lat]);
+  }
+  return pts;
+}
+
+function parseKml(text) {
+  const doc = new DOMParser().parseFromString(text, 'text/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('To nie wygląda na poprawny plik KML.');
+  const v14 = new Set(), v17 = new Set();
+  const st = { placemarks: 0, single14: 0, single17: 0, filled: 0, skipped: 0 };
+  const W14 = 360 / N(14), W17 = 360 / N(17);
+  const near = (a, b) => Math.abs(a - b) < b * 0.2;
+
+  function handlePoly(poly, label) {
+    const outer = parseRing(poly.getElementsByTagName('outerBoundaryIs')[0]);
+    if (!outer || outer.length < 3) return;
+    let minLon = 1e9, maxLon = -1e9, minLat = 1e9, maxLat = -1e9;
+    for (const [lon, lat] of outer) {
+      if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
+      if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+    }
+    const w = maxLon - minLon, cx = (minLon + maxLon) / 2, cy = (minLat + maxLat) / 2;
+    if (near(w, W14)) { v14.add(tkey(lon2x(cx, 14), lat2y(cy, 14), 14)); st.single14++; return; }
+    if (near(w, W17)) { v17.add(tkey(lon2x(cx, 17), lat2y(cy, 17), 17)); st.single17++; return; }
+    if (/yard|über|uber/.test(label)) { st.skipped++; return; }
+    const z = /inho/.test(label) ? 17 : 14;
+    const x0 = lon2x(minLon, z), x1 = lon2x(maxLon, z), y0 = lat2y(maxLat, z), y1 = lat2y(minLat, z);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 4e6) { st.skipped++; return; }
+    const holes = [];
+    for (const ib of poly.getElementsByTagName('innerBoundaryIs')) { const h = parseRing(ib); if (h) holes.push(h); }
+    const set = z === 17 ? v17 : v14;
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+      const lon = x2lon(x + .5, z), lat = y2lat(y + .5, z);
+      if (inRing(outer, lon, lat) && !holes.some(h => inRing(h, lon, lat))) { set.add(tkey(x, y, z)); st.filled++; }
+    }
+  }
+
+  for (const pm of doc.getElementsByTagName('Placemark')) {
+    st.placemarks++;
+    const label = (folderName(pm) + ' ' + childText(pm, 'name')).toLowerCase();
+    for (const poly of pm.getElementsByTagName('Polygon')) handlePoly(poly, label);
+  }
+  // squadratinho leży zawsze wewnątrz odwiedzonego squadrata, ale nie odwrotnie: nic nie dopisujemy
+  return { v14, v17, stats: st };
+}
+</script>
+
+<script src="vendor/leaflet.js"></script>
+<script id="ui">
+const $ = id => document.getElementById(id);
+const S = { v14: new Set(), v17: new Set(), n14: new Set(), n17: new Set(), tracking: false, follow: true, last: null, pos: null, watch: null, wake: null, audio: null };
+
+/* ---------- pamięć (IndexedDB) ---------- */
+const DB = {
+  open() { return new Promise((res, rej) => { const r = indexedDB.open('squadrats-live', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async get(k) { try { const db = await this.open(); return await new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); } catch (e) { return undefined; } },
+  async set(k, v) { try { const db = await this.open(); await new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); } catch (e) { } }
+};
+let saveT = null;
+const saveLive = () => { clearTimeout(saveT); saveT = setTimeout(() => DB.set('live', { n14: [...S.n14], n17: [...S.n17] }), 700); };
+const saveBase = () => DB.set('base', { v14: [...S.v14], v17: [...S.v17] });
+const opt = id => $(id).checked;
+function loadOpts() { try { const o = JSON.parse(localStorage.getItem('sqopts') || '{}'); for (const k in o) if ($(k)) $(k).checked = o[k]; } catch (e) { } }
+function saveOpts() { try { const o = {}; document.querySelectorAll('.opts input').forEach(i => o[i.id] = i.checked); localStorage.setItem('sqopts', JSON.stringify(o)); } catch (e) { } }
+
+/* ---------- mapa ---------- */
+const map = L.map('map', { zoomSnap: 1, zoomControl: true, center: [52, 19], zoom: 6, preferCanvas: true });
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+const me = L.circleMarker([0, 0], { radius: 8, weight: 3, color: '#fff', fillColor: '#e8590c', fillOpacity: 1 });
+const accC = L.circle([0, 0], { radius: 0, weight: 1, color: '#e8590c', fillOpacity: .08, interactive: false });
+map.on('dragstart', () => { S.follow = false; });
+
+const cv = $('ov'), ctx = cv.getContext('2d');
+let raf = 0;
+const redraw = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
+map.on('move zoom resize viewreset', redraw);
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', redraw);
+
+function visible(zt, set, b, fn) {
+  const n = N(zt);
+  const x0 = Math.max(0, lon2x(b.getWest(), zt)), x1 = Math.min(n - 1, lon2x(b.getEast(), zt));
+  const y0 = Math.max(0, lat2y(b.getNorth(), zt)), y1 = Math.min(n - 1, lat2y(b.getSouth(), zt));
+  const cnt = (x1 - x0 + 1) * (y1 - y0 + 1);
+  if (cnt <= set.size || cnt <= 20000) { for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) if (set.has(x * n + y)) fn(x, y); }
+  else for (const k of set) { const x = Math.floor(k / n), y = k - x * n; if (x >= x0 && x <= x1 && y >= y0 && y <= y1) fn(x, y); }
+  return { x0, x1, y0, y1 };
+}
+function draw() {
+  const sz = map.getSize(), dpr = window.devicePixelRatio || 1;
+  if (cv.width !== sz.x * dpr || cv.height !== sz.y * dpr) { cv.width = sz.x * dpr; cv.height = sz.y * dpr; cv.style.width = sz.x + 'px'; cv.style.height = sz.y + 'px'; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, sz.x, sz.y);
+  const cs = getComputedStyle(document.documentElement);
+  const cSeen = cs.getPropertyValue('--seen').trim(), cSeen17 = cs.getPropertyValue('--seen17').trim(), cNew = cs.getPropertyValue('--new').trim();
+  const z = map.getZoom(), b = map.getBounds(), o = map.getPixelBounds().min;
+  const ts14 = 256 * Math.pow(2, z - 14), ts17 = 256 * Math.pow(2, z - 17);
+  const rect = (x, y, ts) => ctx.fillRect(x * ts - o.x, y * ts - o.y, ts, ts);
+
+  if (z >= 7) {
+    ctx.globalAlpha = .26; ctx.fillStyle = cSeen;
+    const r = visible(14, S.v14, b, (x, y) => rect(x, y, ts14));
+    ctx.globalAlpha = .5; ctx.fillStyle = cNew; visible(14, S.n14, b, (x, y) => rect(x, y, ts14));
+    if (opt('ogrid') && z >= 10 && (r.x1 - r.x0 + r.y1 - r.y0) < 60) grid(r, ts14, o, sz, .35, 1.2, cs.getPropertyValue('--fg').trim());
+  }
+  if (opt('o17') && z >= 12) {
+    ctx.globalAlpha = .34; ctx.fillStyle = cSeen17;
+    const r = visible(17, S.v17, b, (x, y) => rect(x, y, ts17));
+    ctx.globalAlpha = .6; ctx.fillStyle = cNew; visible(17, S.n17, b, (x, y) => rect(x, y, ts17));
+    if (opt('ogrid') && z >= 15 && (r.x1 - r.x0 + r.y1 - r.y0) < 90) grid(r, ts17, o, sz, .18, .6, cs.getPropertyValue('--fg').trim());
+  }
+  if (S.pos) {
+    ctx.globalAlpha = 1; ctx.strokeStyle = cNew; ctx.lineWidth = 2.5;
+    for (const [zt, ts] of [[14, ts14], [17, ts17]]) {
+      if (zt === 17 && z < 13) continue; if (zt === 14 && z < 9) continue;
+      ctx.strokeRect(lon2x(S.pos.lon, zt) * ts - o.x, lat2y(S.pos.lat, zt) * ts - o.y, ts, ts);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+function grid(r, ts, o, sz, alpha, w, color) {
+  ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath();
+  for (let x = r.x0; x <= r.x1 + 1; x++) { const px = x * ts - o.x; ctx.moveTo(px, 0); ctx.lineTo(px, sz.y); }
+  for (let y = r.y0; y <= r.y1 + 1; y++) { const py = y * ts - o.y; ctx.moveTo(0, py); ctx.lineTo(sz.x, py); }
+  ctx.stroke();
+}
+
+/* ---------- liczniki i komunikaty ---------- */
+const fmt = n => n.toLocaleString('pl-PL');
+function counts() {
+  $('c14n').textContent = fmt(S.n14.size); $('c17n').textContent = fmt(S.n17.size);
+  $('t14').textContent = fmt(S.v14.size + S.n14.size); $('t17').textContent = fmt(S.v17.size + S.n17.size);
+  document.documentElement.style.setProperty('--sheet-h', $('sheet').offsetHeight + 'px');
+}
+function msg(t, err) { const m = $('msg'); m.textContent = t; m.className = err ? 'err' : ''; counts(); }
+function status(t, warn) { const s = $('status'); s.textContent = t; s.className = warn ? 'warn' : ''; }
+
+let bannerT = 0;
+function announce(kind) {
+  const b = $('banner');
+  b.className = (kind === 'sq' ? '' : 'sqh') + ' pop';
+  b.innerHTML = kind === 'sq'
+    ? `<b>Nowy squadrat!</b><span>Razem dziś: ${S.n14.size} squadrats, ${S.n17.size} squadratinhos</span>`
+    : `<b>Nowe squadratinho</b><span>Razem dziś: ${S.n17.size}</span>`;
+  if (NATIVE && document.visibilityState !== 'visible') notify(kind);
+  b.hidden = false; clearTimeout(bannerT); bannerT = setTimeout(() => { b.hidden = true; }, 4500);
+  if (opt('ovib') && navigator.vibrate) navigator.vibrate(kind === 'sq' ? [250, 90, 250, 90, 250] : [160, 70, 160]);
+  if (opt('osound') && S.audio) beep(kind === 'sq' ? [660, 880, 1175] : [880, 1175]);
+}
+function beep(freqs) {
+  const a = S.audio, t0 = a.currentTime;
+  freqs.forEach((f, i) => {
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'sine'; o.frequency.value = f; o.connect(g); g.connect(a.destination);
+    const t = t0 + i * .13; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.25, t + .02); g.gain.exponentialRampToValueAtTime(.001, t + .12);
+    o.start(t); o.stop(t + .14);
+  });
+}
+
+/* ---------- GPS ---------- */
+const NATIVE = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform());
+const BG = NATIVE ? Capacitor.registerPlugin('BackgroundGeolocation') : null;
+const LN = NATIVE ? Capacitor.registerPlugin('LocalNotifications') : null;
+const GOOD_ACC = 50;
+function hav(a, b) {
+  const R = 6371000, p = Math.PI / 180, dLat = (b.lat - a.lat) * p, dLon = (b.lon - a.lon) * p;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * p) * Math.cos(b.lat * p) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function visit(lat, lon) {
+  const x14 = lon2x(lon, 14), y14 = lat2y(lat, 14), k14 = tkey(x14, y14, 14);
+  const x17 = lon2x(lon, 17), y17 = lat2y(lat, 17), k17 = tkey(x17, y17, 17);
+  let kind = null;
+  if (!S.v14.has(k14) && !S.n14.has(k14)) { S.n14.add(k14); kind = 'sq'; }
+  if (!S.v17.has(k17) && !S.n17.has(k17)) { S.n17.add(k17); kind = kind || 'sqh'; }
+  if (kind) { announce(kind); counts(); saveLive(); }
+}
+function onFix(p) {
+  const c = p.coords, lat = c.latitude, lon = c.longitude, acc = c.accuracy || 0;
+  S.pos = { lat, lon };
+  if (!map.hasLayer(me)) { accC.addTo(map); me.addTo(map); }
+  me.setLatLng([lat, lon]); accC.setLatLng([lat, lon]); accC.setRadius(acc);
+  const t14 = `${lon2x(lon, 14)}/${lat2y(lat, 14)}`;
+  if (acc > GOOD_ACC) { status(`GPS ±${Math.round(acc)} m · za słaby sygnał`, true); redraw(); return; }
+  status(`GPS ±${Math.round(acc)} m · kafelek 14/${t14}`);
+  const cur = { lat, lon };
+  if (S.last) {
+    const d = hav(S.last, cur);
+    if (d > 0 && d <= 1000) {
+      const n = Math.max(1, Math.ceil(d / 20));
+      for (let i = 1; i <= n; i++) visit(S.last.lat + (lat - S.last.lat) * i / n, S.last.lon + (lon - S.last.lon) * i / n);
+    } else if (d > 1000) visit(lat, lon);
+  } else visit(lat, lon);
+  S.last = cur;
+  if (S.follow) map.setView([lat, lon], Math.max(map.getZoom(), 15), { animate: false });
+  redraw();
+}
+function onErr(e) {
+  const m = { 1: 'Brak zgody na lokalizację. Włącz ją dla tej strony w ustawieniach.', 2: 'Nie można ustalić pozycji.', 3: 'Przekroczono czas oczekiwania na GPS.' };
+  status(m[e.code] || 'Błąd GPS', true);
+  if (e.code === 1) stop();
+}
+async function notify(kind) {
+  if (!LN) return;
+  try {
+    await LN.schedule({ notifications: [{
+      id: kind === 'sq' ? 11 : 12, channelId: 'tiles',
+      title: kind === 'sq' ? 'Nowy squadrat!' : 'Nowe squadratinho',
+      body: `Dziś: ${S.n14.size} squadrats, ${S.n17.size} squadratinhos`
+    }] });
+  } catch (e) { }
+}
+async function prepareNotifications() {
+  if (!LN) return;
+  try {
+    const p = await LN.checkPermissions();
+    if (p.display !== 'granted') await LN.requestPermissions();
+    await LN.createChannel({ id: 'tiles', name: 'Nowe kafelki', description: 'Alert po zdobyciu nowego kafelka', importance: 4, visibility: 1, vibration: true });
+  } catch (e) { }
+}
+async function wake() { try { if (opt('owake') && 'wakeLock' in navigator) S.wake = await navigator.wakeLock.request('screen'); } catch (e) { } }
+async function start() {
+  if (!S.v14.size && !S.v17.size) { msg('Najpierw wgraj plik KML ze Squadrats, inaczej każdy kafelek wyjdzie jako nowy.', true); return; }
+  try { S.audio = S.audio || new (window.AudioContext || window.webkitAudioContext)(); S.audio.resume(); } catch (e) { }
+  S.tracking = true; S.follow = true; S.last = null;
+  $('go').textContent = 'Stop'; $('go').classList.add('on'); status('Szukam sygnału GPS…');
+  if (NATIVE) {
+    try {
+      await prepareNotifications();
+      S.watch = await BG.addWatcher({
+        backgroundTitle: 'Squadrats Live',
+        backgroundMessage: 'Zbieram kafelki. Dotknij, aby wrócić do aplikacji.',
+        requestPermissions: true, stale: false, distanceFilter: 5
+      }, (loc, err) => {
+        if (err) {
+          if (err.code === 'NOT_AUTHORIZED') { msg('Brak zgody na lokalizację. Otwieram ustawienia, włącz lokalizację dla tej aplikacji.', true); stop(); BG.openSettings(); }
+          else status('Błąd GPS: ' + (err.message || err.code), true);
+          return;
+        }
+        onFix({ coords: { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy }, timestamp: loc.time });
+      });
+      msg('Śledzenie włączone. Możesz zgasić ekran, kafelki zbierają się w tle.');
+    } catch (e) { msg('Nie udało się uruchomić GPS: ' + (e.message || e), true); stop(); }
+  } else {
+    if (!('geolocation' in navigator)) { msg('Ta przeglądarka nie udostępnia GPS.', true); stop(); return; }
+    if (!window.isSecureContext) { msg('Lokalizacja działa tylko na stronie https.', true); stop(); return; }
+    S.watch = navigator.geolocation.watchPosition(onFix, onErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+    msg('Śledzenie włączone. Zostaw ekran włączony i stronę na wierzchu.'); wake();
+  }
+}
+function stop() {
+  const was = S.tracking; S.tracking = false;
+  if (S.watch !== null) {
+    if (NATIVE) { try { BG.removeWatcher({ id: S.watch }); } catch (e) { } }
+    else navigator.geolocation.clearWatch(S.watch);
+  }
+  S.watch = null;
+  try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony');
+  if (was) msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
+  clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] });
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.tracking && !NATIVE) wake(); });
+
+/* ---------- import KML ---------- */
+async function importKml(file) {
+  msg('Wczytuję plik…');
+  try {
+    const { v14, v17, stats } = parseKml(await file.text());
+    if (!v14.size && !v17.size) throw new Error('W pliku nie znalazłem żadnych kafelków. Czy to na pewno KML ze Squadrats?');
+    S.v14 = v14; S.v17 = v17;
+    for (const k of [...S.n14]) if (v14.has(k)) S.n14.delete(k);
+    for (const k of [...S.n17]) if (v17.has(k)) S.n17.delete(k);
+    await saveBase(); saveLive();
+    let sx = 0, sy = 0; for (const k of v14) { const [x, y] = tunkey(k, 14); sx += x; sy += y; }
+    const cx = sx / v14.size + .5, cy = sy / v14.size + .5;
+    if (v14.size) map.setView([y2lat(cy, 14), x2lon(cx, 14)], 11);
+    counts(); redraw();
+    msg(`Wczytano ${fmt(v14.size)} squadrats i ${fmt(v17.size)} squadratinhos (${fmt(stats.placemarks)} obiektów w pliku${stats.skipped ? ', pominięto ' + stats.skipped + ' dużych wielokątów' : ''}).`);
+  } catch (e) { msg(e.message || 'Nie udało się wczytać pliku.', true); }
+}
+$('imp').onclick = () => $('file').click();
+$('file').onchange = e => { const f = e.target.files[0]; if (f) importKml(f); e.target.value = ''; };
+$('go').onclick = () => S.tracking ? stop() : start();
+$('locate').onclick = () => { S.follow = true; if (S.pos) map.setView([S.pos.lat, S.pos.lon], Math.max(map.getZoom(), 15)); };
+$('sync').onclick = async () => {
+  for (const k of S.n14) S.v14.add(k); for (const k of S.n17) S.v17.add(k);
+  S.n14.clear(); S.n17.clear(); await saveBase(); saveLive(); counts(); redraw(); msg('Nowe kafelki oznaczone jako wgrane.');
+};
+document.querySelectorAll('.opts input').forEach(i => i.onchange = () => { saveOpts(); redraw(); if (i.id === 'owake' && S.tracking) (i.checked ? wake() : (S.wake && S.wake.release())); });
+
+/* ---------- start ---------- */
+(async function init() {
+  loadOpts();
+  const base = await DB.get('base'), live = await DB.get('live');
+  if (base) { S.v14 = new Set(base.v14); S.v17 = new Set(base.v17); }
+  if (live) { S.n14 = new Set(live.n14); S.n17 = new Set(live.n17); }
+  if (S.v14.size) {
+    let sx = 0, sy = 0; for (const k of S.v14) { const [x, y] = tunkey(k, 14); sx += x; sy += y; }
+    map.setView([y2lat(sy / S.v14.size + .5, 14), x2lon(sx / S.v14.size + .5, 14)], 11);
+    msg('Dane wczytane z pamięci telefonu. Naciśnij Start, żeby śledzić.');
+  }
+  counts(); redraw();
+  window.addEventListener('resize', counts);
+})();
+</script>
+</body>
+</html>

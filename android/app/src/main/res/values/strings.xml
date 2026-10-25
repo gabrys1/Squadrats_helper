@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Squadrats Live</string>
+    <string name="title_activity_main">Squadrats Live</string>
+    <string name="package_name">pl.squadrats.live</string>
+    <string name="custom_url_scheme">pl.squadrats.live</string>
+</resources>

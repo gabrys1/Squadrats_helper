@@ -1,0 +1,9 @@
+{
+  "appId": "pl.squadrats.live",
+  "appName": "Squadrats Live",
+  "webDir": "www",
+  "backgroundColor": "#101615",
+  "android": {
+    "useLegacyBridge": true
+  }
+}
