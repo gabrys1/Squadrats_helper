@@ -37,34 +37,32 @@ body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,
 #locate{position:absolute;z-index:800;right:max(12px,env(safe-area-inset-right,0px));bottom:calc(var(--sheet-h,230px) + 12px);width:46px;height:46px;border-radius:50%;
   border:1px solid var(--line);background:var(--panel);color:var(--fg);display:grid;place-items:center;cursor:pointer}
 #sheet{position:absolute;z-index:850;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);border-radius:18px 18px 0 0;
-  padding:12px max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
-  max-height:70%;overflow:auto;backdrop-filter:blur(8px)}
-.counters{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.counters div{border:1px solid var(--line);border-radius:12px;padding:8px 12px}
-.counters span{display:block;font:700 44px/1 var(--display);font-variant-numeric:tabular-nums}
-.counters label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  max-height:55%;overflow:auto;backdrop-filter:blur(8px)}
+.counters{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.counters div{border:1px solid var(--line);border-radius:10px;padding:4px 10px;display:flex;align-items:center;gap:8px;min-width:0}
+.counters span{font:700 28px/1 var(--display);font-variant-numeric:tabular-nums}
+.counters label{font-size:10px;line-height:1.15;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 #c14w{color:var(--new)} #c17w{color:var(--seen17)}
-.totals{margin:10px 0;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.totals{margin:6px 0;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
 .totals b{color:var(--fg)}
 .row{display:flex;gap:8px}
 button{font:inherit;cursor:pointer}
-.primary,.sec{flex:1;min-height:48px;border-radius:12px;border:1px solid var(--btn);font-weight:700}
+.primary,.sec{flex:1;min-height:44px;border-radius:12px;border:1px solid var(--btn);font-weight:700}
 .primary{background:var(--btn);color:var(--btnfg)}
 .primary.on{background:var(--warn);border-color:var(--warn);color:#fff}
 .sec{background:transparent;color:var(--fg);border-color:var(--line)}
 button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--seen17);outline-offset:2px}
-details{margin-top:10px}
-summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
+details{margin-top:4px}
+summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 .opts{display:grid;gap:6px;padding:6px 0}
 .opts label{display:flex;gap:10px;align-items:center;min-height:32px}
 .opts button{margin-top:6px;min-height:40px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg)}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:8px}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
-#msg{margin:8px 0 0;font-size:13px;color:var(--muted)}
+#msg{margin:6px 0 0;font-size:12px;line-height:1.3;color:var(--muted)}
 #msg.err{color:var(--warn)}
 [hidden]{display:none!important}
-#dbg{position:absolute;z-index:900;left:max(12px,env(safe-area-inset-left,0px));right:12px;top:calc(env(safe-area-inset-top,0px) + 52px);margin:0;font:11px/1.35 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px;white-space:pre-wrap;word-break:break-word;max-height:112px;overflow:hidden;pointer-events:none}
-#dbg:empty{display:none}
 .vh{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
 .lbl{display:flex;align-items:center;justify-content:center;cursor:pointer;box-sizing:border-box;text-align:center;user-select:none}
 </style>
@@ -73,21 +71,13 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony · wersja 1.3</div>
-  <pre id="dbg"></pre>
+  <div id="status">GPS wyłączony · wersja 1.4</div>
   <script>
-    (function () {
-      var lines = [];
-      window.dbg = function (t) {
-        lines.push(String(t)); if (lines.length > 7) lines.shift();
-        var el = document.getElementById('dbg'); if (el) el.textContent = lines.join('\n');
-      };
-      window.addEventListener('error', function (e) { dbg('BŁĄD: ' + e.message + ' (linia ' + e.lineno + ')'); });
-      window.addEventListener('unhandledrejection', function (e) { dbg('BŁĄD obietnicy: ' + (e.reason && e.reason.message || e.reason)); });
-      document.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('#imp')) dbg('dotknięto: Wgraj KML'); }, true);
-      document.addEventListener('change', function (e) { if (e.target && e.target.id === 'file') dbg('zdarzenie change: ' + (e.target.files && e.target.files[0] ? e.target.files[0].name : 'brak pliku')); }, true);
-      dbg('start strony');
-    })();
+    window.dbg = function () {};
+    window.addEventListener('error', function (e) {
+      var m = document.getElementById('msg');
+      if (m) { m.textContent = 'Błąd aplikacji: ' + e.message; m.className = 'err'; }
+    });
   </script>
   <div id="banner" hidden></div>
   <button id="locate" aria-label="Wyśrodkuj na mojej pozycji">
@@ -254,7 +244,8 @@ function loadOpts() { try { const o = JSON.parse(localStorage.getItem('sqopts') 
 function saveOpts() { try { const o = {}; document.querySelectorAll('.opts input').forEach(i => o[i.id] = i.checked); localStorage.setItem('sqopts', JSON.stringify(o)); } catch (e) { } }
 
 /* ---------- mapa ---------- */
-const map = L.map('map', { zoomSnap: 1, zoomControl: true, center: [52, 19], zoom: 6, preferCanvas: true });
+const map = L.map('map', { zoomSnap: 1, zoomControl: false, center: [52, 19], zoom: 6, preferCanvas: true });
+L.control.zoom({ position: 'topright' }).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 const me = L.circleMarker([0, 0], { radius: 8, weight: 3, color: '#fff', fillColor: '#e8590c', fillOpacity: 1 });
 const accC = L.circle([0, 0], { radius: 0, weight: 1, color: '#e8590c', fillOpacity: .08, interactive: false });
@@ -446,7 +437,7 @@ function stop() {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.3');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.4');
   if (was) msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
   clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] });
 }
