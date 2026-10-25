@@ -64,6 +64,7 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 #msg.err{color:var(--warn)}
 [hidden]{display:none!important}
 .vh{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+.opts .sec{flex:none;width:100%;min-height:40px;border-radius:10px}
 .lbl{display:flex;align-items:center;justify-content:center;cursor:pointer;box-sizing:border-box;text-align:center;user-select:none}
 </style>
 </head>
@@ -71,7 +72,7 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony · wersja 1.4</div>
+  <div id="status">GPS wyłączony · wersja 1.5</div>
   <script>
     window.dbg = function () {};
     window.addEventListener('error', function (e) {
@@ -91,12 +92,12 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
     <div class="totals">Razem: <b id="t14">0</b> squadrats · <b id="t17">0</b> squadratinhos</div>
     <div class="row">
       <button id="go" class="primary">Start</button>
-      <label id="imp" class="sec lbl" for="file">Wgraj KML</label>
     </div>
-    <p id="msg">Wgraj plik KML ze Squadrats (Map → Download KML), potem naciśnij Start.</p>
-    <details>
+    <p id="msg">Wgraj plik KML ze Squadrats (Ustawienia → Wgraj KML), potem naciśnij Start.</p>
+    <details id="settings">
       <summary>Ustawienia i legenda</summary>
       <div class="opts">
+        <label id="imp" class="sec lbl" for="file">Wgraj KML ze Squadrats</label>
         <label><input type="checkbox" id="o17" checked> Pokaż squadratinhos</label>
         <label><input type="checkbox" id="ogrid" checked> Pokaż siatkę</label>
         <label><input type="checkbox" id="osound" checked> Dźwięk przy nowym kafelku</label>
@@ -401,7 +402,7 @@ async function prepareNotifications() {
 }
 async function wake() { try { if (opt('owake') && 'wakeLock' in navigator) S.wake = await navigator.wakeLock.request('screen'); } catch (e) { } }
 async function start() {
-  if (!S.v14.size && !S.v17.size) { msg('Najpierw wgraj plik KML ze Squadrats, inaczej każdy kafelek wyjdzie jako nowy.', true); return; }
+  if (!S.v14.size && !S.v17.size) { $('settings').open = true; msg('Najpierw wgraj plik KML ze Squadrats (przycisk w Ustawieniach), inaczej każdy kafelek wyjdzie jako nowy.', true); return; }
   try { S.audio = S.audio || new (window.AudioContext || window.webkitAudioContext)(); S.audio.resume(); } catch (e) { }
   S.tracking = true; S.follow = true; S.last = null;
   $('go').textContent = 'Stop'; $('go').classList.add('on'); status('Szukam sygnału GPS…');
@@ -437,7 +438,7 @@ function stop() {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.4');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.5');
   if (was) msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
   clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] });
 }
@@ -485,6 +486,7 @@ document.querySelectorAll('.opts input').forEach(i => i.onchange = () => { saveO
     map.setView([y2lat(sy / S.v14.size + .5, 14), x2lon(sx / S.v14.size + .5, 14)], 11);
     msg('Dane wczytane z pamięci telefonu. Naciśnij Start, żeby śledzić.');
   }
+  if (!S.v14.size && !S.v17.size) $('settings').open = true;
   counts(); redraw();
   window.addEventListener('resize', counts);
   dbg('aplikacja gotowa · natywna=' + NATIVE + ' · liczba kafelków z pamięci: ' + S.v14.size);
