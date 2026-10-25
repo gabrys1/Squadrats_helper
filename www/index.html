@@ -63,6 +63,8 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
 #msg{margin:8px 0 0;font-size:13px;color:var(--muted)}
 #msg.err{color:var(--warn)}
 [hidden]{display:none!important}
+#dbg{position:absolute;z-index:900;left:max(12px,env(safe-area-inset-left,0px));right:12px;top:calc(env(safe-area-inset-top,0px) + 52px);margin:0;font:11px/1.35 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px;white-space:pre-wrap;word-break:break-word;max-height:112px;overflow:hidden;pointer-events:none}
+#dbg:empty{display:none}
 .vh{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
 .lbl{display:flex;align-items:center;justify-content:center;cursor:pointer;box-sizing:border-box;text-align:center;user-select:none}
 </style>
@@ -71,7 +73,22 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony · wersja 1.1</div>
+  <div id="status">GPS wyłączony · wersja 1.2</div>
+  <pre id="dbg"></pre>
+  <script>
+    (function () {
+      var lines = [];
+      window.dbg = function (t) {
+        lines.push(String(t)); if (lines.length > 7) lines.shift();
+        var el = document.getElementById('dbg'); if (el) el.textContent = lines.join('\n');
+      };
+      window.addEventListener('error', function (e) { dbg('BŁĄD: ' + e.message + ' (linia ' + e.lineno + ')'); });
+      window.addEventListener('unhandledrejection', function (e) { dbg('BŁĄD obietnicy: ' + (e.reason && e.reason.message || e.reason)); });
+      document.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('#imp')) dbg('dotknięto: Wgraj KML'); }, true);
+      document.addEventListener('change', function (e) { if (e.target && e.target.id === 'file') dbg('zdarzenie change: ' + (e.target.files && e.target.files[0] ? e.target.files[0].name : 'brak pliku')); }, true);
+      dbg('start strony');
+    })();
+  </script>
   <div id="banner" hidden></div>
   <button id="locate" aria-label="Wyśrodkuj na mojej pozycji">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
@@ -427,7 +444,7 @@ function stop() {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.1');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.2');
   if (was) msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
   clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] });
 }
@@ -477,6 +494,7 @@ document.querySelectorAll('.opts input').forEach(i => i.onchange = () => { saveO
   }
   counts(); redraw();
   window.addEventListener('resize', counts);
+  dbg('aplikacja gotowa · natywna=' + NATIVE + ' · liczba kafelków z pamięci: ' + S.v14.size);
 })();
 </script>
 </body>
