@@ -50,6 +50,13 @@ jobs:
           msg=$(grep -B2 -A25 -E "What went wrong|error:" build.log | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=Gradle failure::$msg"
 
+      - name: Debug build output
+        if: always()
+        run: |
+          apks=$(find android -name "*.apk" | tr '\n' ' ')
+          tail=$(tail -15 build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::notice title=APK files::${apks:-none}%0A${tail}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: squadrats-live-apk
