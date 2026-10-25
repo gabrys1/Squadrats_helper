@@ -36,6 +36,7 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: |
+          set -o pipefail
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon 2>&1 | tee ../build.log
 
