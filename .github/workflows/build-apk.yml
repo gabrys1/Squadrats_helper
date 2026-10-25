@@ -37,7 +37,13 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee ../build.log
+
+      - name: Report Gradle error
+        if: failure()
+        run: |
+          msg=$(grep -B2 -A25 -E "What went wrong|error:" build.log | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Gradle failure::$msg"
 
       - uses: actions/upload-artifact@v4
         with:
