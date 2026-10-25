@@ -28,7 +28,7 @@ jobs:
         run: npm ci
 
       - name: Patch background-geolocation plugin (AGP version)
-        run: sed -i "/classpath 'com.android.tools.build:gradle:8.0.0'/d" node_modules/@capacitor-community/background-geolocation/android/build.gradle
+        run: sed -i "s/gradle:8.0.0'/gradle:8.13.0'/" node_modules/@capacitor-community/background-geolocation/android/build.gradle
 
       - name: Sync web app into Android project
         run: npx cap sync android
