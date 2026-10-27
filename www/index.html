@@ -82,7 +82,7 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony · wersja 1.7</div>
+  <div id="status">GPS wyłączony · wersja 1.8</div>
   <script>
     window.dbg = function () {};
     window.addEventListener('error', function (e) {
@@ -121,7 +121,6 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
         <label><input type="checkbox" id="ovib" checked> Wibracja</label>
         <label><input type="checkbox" id="owake" checked> Nie wygaszaj ekranu</label>
         <button id="trclr">Wyczyść ślad trasy</button>
-        <button id="sync">Oznacz nowe jako już wgrane do Squadrats</button>
       </div>
       <div class="legend">
         <span><i style="background:var(--seen)"></i>Twoje squadrats</span>
@@ -477,6 +476,13 @@ async function wake() { try { if (opt('owake') && 'wakeLock' in navigator) S.wak
 async function start() {
   if (!S.v14.size && !S.v17.size) { $('settings').open = true; msg('Najpierw wgraj plik KML ze Squadrats (przycisk w Ustawieniach), inaczej każdy kafelek wyjdzie jako nowy.', true); return; }
   try { S.audio = S.audio || new (window.AudioContext || window.webkitAudioContext)(); S.audio.resume(); } catch (e) { }
+  if (S.n14.size || S.n17.size) {
+    for (const k of S.n14) S.v14.add(k);
+    for (const k of S.n17) S.v17.add(k);
+    S.n14.clear(); S.n17.clear();
+    saveBase(); saveLive();
+  }
+  counts(); redraw();
   S.tracking = true; S.follow = true; S.last = null;
   if (S.track.length && S.track[S.track.length - 1].length) S.track.push([]);
   $('go').textContent = 'Stop'; $('go').classList.add('on'); status('Szukam sygnału GPS…');
@@ -512,7 +518,7 @@ function stop() {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.7');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.8');
   if (was) msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
   clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] }); saveGoals(); DB.set('track', S.track);
 }
@@ -546,10 +552,6 @@ window.addEventListener('error', e => msg('Błąd aplikacji: ' + e.message, true
 window.addEventListener('unhandledrejection', e => msg('Błąd aplikacji: ' + (e.reason && e.reason.message || e.reason), true));
 $('go').onclick = () => S.tracking ? stop() : start();
 $('locate').onclick = () => { S.follow = true; if (S.pos) map.setView([S.pos.lat, S.pos.lon], Math.max(map.getZoom(), 15)); };
-$('sync').onclick = async () => {
-  for (const k of S.n14) S.v14.add(k); for (const k of S.n17) S.v17.add(k);
-  S.n14.clear(); S.n17.clear(); await saveBase(); saveLive(); counts(); redraw(); msg('Nowe kafelki oznaczone jako wgrane.');
-};
 document.querySelectorAll('.opts input').forEach(i => i.onchange = () => { saveOpts(); redraw(); if (i.id === 'owake' && S.tracking) (i.checked ? wake() : (S.wake && S.wake.release())); });
 
 /* ---------- ślad trasy ---------- */
