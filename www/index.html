@@ -10,13 +10,13 @@
 /* Układ: mapa na cały ekran, pigułka statusu u góry, dolny panel z licznikami i przyciskami. */
 :root{
   --bg:#f2f5f3; --panel:rgba(255,255,255,.94); --fg:#13201c; --muted:#5b6a65; --line:#d3dbd7;
-  --seen:#0b7a75; --seen17:#2f7fd1; --new:#e8590c; --goal:#7b3fe4; --btn:#13201c; --btnfg:#ffffff; --warn:#b3261e;
+  --seen:#0b7a75; --seen17:#2f7fd1; --new:#e8590c; --goal:#7b3fe4; --track:#d6246e; --btn:#13201c; --btnfg:#ffffff; --warn:#b3261e;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#101615; --panel:rgba(22,31,29,.95); --fg:#e8efec; --muted:#93a39d; --line:#2b3733;
-  --seen:#35c2b8; --seen17:#6aa8ee; --new:#ff8a3d; --goal:#b794f6; --btn:#e8efec; --btnfg:#101615; --warn:#ff8a80; color-scheme:dark}}
+  --seen:#35c2b8; --seen17:#6aa8ee; --new:#ff8a3d; --goal:#b794f6; --track:#ff5c9d; --btn:#e8efec; --btnfg:#101615; --warn:#ff8a80; color-scheme:dark}}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
 #app{position:fixed;inset:0}
@@ -82,7 +82,7 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony · wersja 1.6</div>
+  <div id="status">GPS wyłączony · wersja 1.7</div>
   <script>
     window.dbg = function () {};
     window.addEventListener('error', function (e) {
@@ -103,7 +103,7 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
       <div><span id="c14n">0</span><label>Nowe squadrats</label></div>
       <div><span id="c17n">0</span><label>Nowe squadratinhos</label></div>
     </div>
-    <div class="totals">Razem: <b id="t14">0</b> squadrats · <b id="t17">0</b> squadratinhos</div>
+    <div class="totals">Razem: <b id="t14">0</b> squadrats · <b id="t17">0</b> squadratinhos · trasa <b id="km">0</b> km</div>
     <div id="goals" hidden></div>
     <div class="row">
       <button id="go" class="primary">Start</button>
@@ -116,9 +116,11 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
         <label id="imp" class="sec lbl" for="file">Wgraj KML ze Squadrats</label>
         <label><input type="checkbox" id="o17" checked> Pokaż squadratinhos</label>
         <label><input type="checkbox" id="ogrid" checked> Pokaż siatkę</label>
+        <label><input type="checkbox" id="otrack" checked> Pokaż ślad trasy</label>
         <label><input type="checkbox" id="osound" checked> Dźwięk przy nowym kafelku</label>
         <label><input type="checkbox" id="ovib" checked> Wibracja</label>
         <label><input type="checkbox" id="owake" checked> Nie wygaszaj ekranu</label>
+        <button id="trclr">Wyczyść ślad trasy</button>
         <button id="sync">Oznacz nowe jako już wgrane do Squadrats</button>
       </div>
       <div class="legend">
@@ -245,7 +247,7 @@ function parseKml(text) {
 <script src="vendor/leaflet.js"></script>
 <script id="ui">
 const $ = id => document.getElementById(id);
-const S = { v14: new Set(), v17: new Set(), n14: new Set(), n17: new Set(), t14: new Set(), t17: new Set(), g14: new Set(), g17: new Set(), sel: false, gz: 14, tracking: false, follow: true, last: null, pos: null, watch: null, wake: null, audio: null };
+const S = { v14: new Set(), v17: new Set(), n14: new Set(), n17: new Set(), t14: new Set(), t17: new Set(), g14: new Set(), g17: new Set(), sel: false, gz: 14, track: [], dist: 0, tracking: false, follow: true, last: null, pos: null, watch: null, wake: null, audio: null };
 
 /* ---------- pamięć (IndexedDB) ---------- */
 const DB = {
@@ -257,6 +259,8 @@ let saveT = null;
 const saveLive = () => { clearTimeout(saveT); saveT = setTimeout(() => DB.set('live', { n14: [...S.n14], n17: [...S.n17] }), 700); };
 let saveG = null;
 const saveGoals = () => { clearTimeout(saveG); saveG = setTimeout(() => DB.set('goals', { t14: [...S.t14], t17: [...S.t17], g14: [...S.g14], g17: [...S.g17] }), 500); };
+let saveTr = null;
+const saveTrack = () => { if (saveTr) return; saveTr = setTimeout(() => { saveTr = null; DB.set('track', S.track); }, 4000); };
 const saveBase = () => DB.set('base', { v14: [...S.v14], v17: [...S.v17] });
 const opt = id => $(id).checked;
 function loadOpts() { try { const o = JSON.parse(localStorage.getItem('sqopts') || '{}'); for (const k in o) if ($(k)) $(k).checked = o[k]; } catch (e) { } }
@@ -318,6 +322,25 @@ function draw() {
   };
   goals(14, S.t14, S.g14, ts14, 7);
   if (opt('o17') || S.t17.size || S.g17.size) goals(17, S.t17, S.g17, ts17, 12);
+  if (opt('otrack') && S.track.length) {
+    const cT = cs.getPropertyValue('--track').trim();
+    const path = () => {
+      ctx.beginPath();
+      for (const seg of S.track) {
+        let lx = 1e9, ly = 1e9, started = false;
+        for (let i = 0; i < seg.length; i++) {
+          const pt = map.project(L.latLng(seg[i][0], seg[i][1]), z), x = pt.x - o.x, y = pt.y - o.y;
+          if (started && i < seg.length - 1 && Math.abs(x - lx) < 2 && Math.abs(y - ly) < 2) continue;
+          if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+          lx = x; ly = y;
+        }
+        if (seg.length === 1 && started) ctx.lineTo(lx + .1, ly);
+      }
+    };
+    ctx.globalAlpha = 1; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6; path(); ctx.stroke();
+    ctx.strokeStyle = cT; ctx.lineWidth = 3.5; path(); ctx.stroke();
+  }
   if (S.pos) {
     ctx.globalAlpha = 1; ctx.strokeStyle = cNew; ctx.lineWidth = 2.5;
     for (const [zt, ts] of [[14, ts14], [17, ts17]]) {
@@ -339,6 +362,7 @@ const fmt = n => n.toLocaleString('pl-PL');
 function counts() {
   $('c14n').textContent = fmt(S.n14.size); $('c17n').textContent = fmt(S.n17.size);
   $('t14').textContent = fmt(S.v14.size + S.n14.size); $('t17').textContent = fmt(S.v17.size + S.n17.size);
+  $('km').textContent = fmt(Math.round(S.dist * 10) / 10);
   const pend = S.t14.size + S.t17.size, done = S.g14.size + S.g17.size, g = $('goals');
   g.hidden = !(pend + done);
   if (pend + done) g.textContent = `Cele: ${done}/${pend + done} zdobyte`;
@@ -394,6 +418,17 @@ function visit(lat, lon) {
   if (S.t17.delete(k17)) { S.g17.add(k17); goal = true; }
   if (kind || goal) { announce(goal ? 'goal' : kind); counts(); saveLive(); if (goal) saveGoals(); }
 }
+function addTrackPoint(lat, lon) {
+  if (!S.track.length) S.track.push([]);
+  const seg = S.track[S.track.length - 1], prev = seg[seg.length - 1];
+  if (prev) {
+    const d = hav({ lat: prev[0], lon: prev[1] }, { lat, lon });
+    if (d < 4) return;
+    if (d <= 1000) S.dist += d / 1000;
+  }
+  seg.push([+lat.toFixed(6), +lon.toFixed(6)]);
+  saveTrack(); counts();
+}
 function onFix(p) {
   const c = p.coords, lat = c.latitude, lon = c.longitude, acc = c.accuracy || 0;
   S.pos = { lat, lon };
@@ -403,6 +438,7 @@ function onFix(p) {
   if (acc > GOOD_ACC) { status(`GPS ±${Math.round(acc)} m · za słaby sygnał`, true); redraw(); return; }
   status(`GPS ±${Math.round(acc)} m · kafelek 14/${t14}`);
   const cur = { lat, lon };
+  addTrackPoint(lat, lon);
   if (S.last) {
     const d = hav(S.last, cur);
     if (d > 0 && d <= 1000) {
@@ -442,6 +478,7 @@ async function start() {
   if (!S.v14.size && !S.v17.size) { $('settings').open = true; msg('Najpierw wgraj plik KML ze Squadrats (przycisk w Ustawieniach), inaczej każdy kafelek wyjdzie jako nowy.', true); return; }
   try { S.audio = S.audio || new (window.AudioContext || window.webkitAudioContext)(); S.audio.resume(); } catch (e) { }
   S.tracking = true; S.follow = true; S.last = null;
+  if (S.track.length && S.track[S.track.length - 1].length) S.track.push([]);
   $('go').textContent = 'Stop'; $('go').classList.add('on'); status('Szukam sygnału GPS…');
   if (NATIVE) {
     try {
@@ -475,9 +512,9 @@ function stop() {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.6');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.7');
   if (was) msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
-  clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] }); saveGoals();
+  clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] }); saveGoals(); DB.set('track', S.track);
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.tracking && !NATIVE) wake(); });
 
@@ -515,6 +552,16 @@ $('sync').onclick = async () => {
 };
 document.querySelectorAll('.opts input').forEach(i => i.onchange = () => { saveOpts(); redraw(); if (i.id === 'owake' && S.tracking) (i.checked ? wake() : (S.wake && S.wake.release())); });
 
+/* ---------- ślad trasy ---------- */
+function trackLen(tr) { let d = 0; for (const seg of tr) for (let i = 1; i < seg.length; i++) { d += hav({ lat: seg[i - 1][0], lon: seg[i - 1][1] }, { lat: seg[i][0], lon: seg[i][1] }); } return d / 1000; }
+let trArm = 0;
+$('trclr').onclick = () => {
+  const b = $('trclr');
+  if (!b.dataset.arm) { b.dataset.arm = '1'; b.textContent = 'Na pewno? Dotknij jeszcze raz'; trArm = setTimeout(() => { delete b.dataset.arm; b.textContent = 'Wyczyść ślad trasy'; }, 3000); return; }
+  clearTimeout(trArm); delete b.dataset.arm; b.textContent = 'Wyczyść ślad trasy';
+  S.track = []; S.dist = 0; DB.set('track', S.track); counts(); redraw(); msg('Ślad trasy wyczyszczony.');
+};
+
 /* ---------- cele: zaznaczanie kafelków na mapie ---------- */
 function setSel(on) {
   S.sel = on; $('tg').classList.toggle('on', on); $('tg').textContent = on ? 'Gotowe' : 'Cele'; $('gbar').hidden = !on;
@@ -549,9 +596,10 @@ map.on('click', e => {
 /* ---------- start ---------- */
 (async function init() {
   loadOpts();
-  const base = await DB.get('base'), live = await DB.get('live'), goalsSaved = await DB.get('goals');
+  const base = await DB.get('base'), live = await DB.get('live'), goalsSaved = await DB.get('goals'), trackSaved = await DB.get('track');
   if (base) { S.v14 = new Set(base.v14); S.v17 = new Set(base.v17); }
   if (live) { S.n14 = new Set(live.n14); S.n17 = new Set(live.n17); }
+  if (Array.isArray(trackSaved)) { S.track = trackSaved; S.dist = trackLen(trackSaved); }
   if (goalsSaved) { S.t14 = new Set(goalsSaved.t14); S.t17 = new Set(goalsSaved.t17); S.g14 = new Set(goalsSaved.g14); S.g17 = new Set(goalsSaved.g17); }
   if (S.v14.size) {
     let sx = 0, sy = 0; for (const k of S.v14) { const [x, y] = tunkey(k, 14); sx += x; sy += y; }
