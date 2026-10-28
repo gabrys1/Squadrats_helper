@@ -15,6 +15,5 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3"
-  },
-  "author": "Marcin (gabrys1)"
+  }
 }

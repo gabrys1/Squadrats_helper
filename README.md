@@ -33,4 +33,4 @@ a workflow zbuduje nowy APK.
 
 ## Autor
 
-Marcin ([gabrys1](https://github.com/gabrys1)). Aplikacja nieoficjalna, niezwiązana ze Squadrats.com.
+Dane autora wpisujesz w aplikacji (Ustawienia i legenda → Ustaw dane autora). Zostają tylko w pamięci telefonu i nie trafiają do repozytorium.
