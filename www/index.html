@@ -73,6 +73,8 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 #msg{margin:6px 0 0;font-size:12px;line-height:1.3;color:var(--muted)}
 #msg.err{color:var(--warn)}
 [hidden]{display:none!important}
+.hint{font-size:11px;line-height:1.35;color:var(--muted);margin:6px 0 0}
+#logbox{margin:6px 0;font:10px/1.35 var(--mono);max-height:150px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:6px}
 .vh{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
 .opts .sec{flex:none;width:100%;min-height:40px;border-radius:10px}
 .lbl{display:flex;align-items:center;justify-content:center;cursor:pointer;box-sizing:border-box;text-align:center;user-select:none}
@@ -82,7 +84,7 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony · wersja 1.8</div>
+  <div id="status">GPS wyłączony · wersja 1.9</div>
   <script>
     window.dbg = function () {};
     window.addEventListener('error', function (e) {
@@ -122,6 +124,12 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
         <label><input type="checkbox" id="owake" checked> Nie wygaszaj ekranu</label>
         <button id="trclr">Wyczyść ślad trasy</button>
       </div>
+      <details id="logd">
+        <summary>Dziennik zdarzeń (diagnostyka)</summary>
+        <pre id="logbox">(pusto)</pre>
+        <button id="logclr" class="sec" style="width:100%;min-height:36px">Wyczyść dziennik</button>
+      </details>
+      <p class="hint">Jeśli trasa sama się zatrzymuje: Ustawienia Androida → Aplikacje → Squadrats Live → Bateria → „Bez ograniczeń". W widoku ostatnich aplikacji zablokuj kartę Squadrats Live (przytrzymaj kartę → Zablokuj), żeby system jej nie zamykał.</p>
       <div class="legend">
         <span><i style="background:var(--seen)"></i>Twoje squadrats</span>
         <span><i style="background:var(--seen17)"></i>Twoje squadratinhos</span>
@@ -254,6 +262,16 @@ const DB = {
   async get(k) { try { const db = await this.open(); return await new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); } catch (e) { return undefined; } },
   async set(k, v) { try { const db = await this.open(); await new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); } catch (e) { } }
 };
+const LOG = [];
+const hhmmss = () => new Date().toLocaleTimeString('pl-PL', { hour12: false });
+let saveLg = null;
+function logEv(t) {
+  LOG.push(hhmmss() + ' ' + t); if (LOG.length > 80) LOG.shift();
+  const b = $('logbox'); if (b) { b.textContent = LOG.slice(-30).join('\n'); b.scrollTop = b.scrollHeight; }
+  if (!saveLg) saveLg = setTimeout(() => { saveLg = null; DB.set('log', LOG); }, 3000);
+}
+const saveRide = a => DB.set('ride', { active: a, at: Date.now() });
+let rideBeat = 0;
 let saveT = null;
 const saveLive = () => { clearTimeout(saveT); saveT = setTimeout(() => DB.set('live', { n14: [...S.n14], n17: [...S.n17] }), 700); };
 let saveG = null;
@@ -433,9 +451,13 @@ function onFix(p) {
   S.pos = { lat, lon };
   if (!map.hasLayer(me)) { accC.addTo(map); me.addTo(map); }
   me.setLatLng([lat, lon]); accC.setLatLng([lat, lon]); accC.setRadius(acc);
-  const t14 = `${lon2x(lon, 14)}/${lat2y(lat, 14)}`;
-  if (acc > GOOD_ACC) { status(`GPS ±${Math.round(acc)} m · za słaby sygnał`, true); redraw(); return; }
-  status(`GPS ±${Math.round(acc)} m · kafelek 14/${t14}`);
+  const now = Date.now();
+  if (S.lastFixAt && now - S.lastFixAt > 40000) logEv('przerwa w odczytach GPS: ' + Math.round((now - S.lastFixAt) / 1000) + ' s (postój lub utrata sygnału)');
+  S.lastFixAt = now; S.fixN = (S.fixN || 0) + 1;
+  if (S.fixN === 1) logEv('pierwszy odczyt GPS ±' + Math.round(acc) + ' m');
+  if (now - rideBeat > 20000) { rideBeat = now; saveRide(true); }
+  if (acc > GOOD_ACC) { status(`GPS ±${Math.round(acc)} m · ${hhmmss()} · słaby sygnał`, true); redraw(); return; }
+  status(`GPS ±${Math.round(acc)} m · ${hhmmss()}`);
   const cur = { lat, lon };
   addTrackPoint(lat, lon);
   if (S.last) {
@@ -452,7 +474,7 @@ function onFix(p) {
 function onErr(e) {
   const m = { 1: 'Brak zgody na lokalizację. Włącz ją dla tej strony w ustawieniach.', 2: 'Nie można ustalić pozycji.', 3: 'Przekroczono czas oczekiwania na GPS.' };
   status(m[e.code] || 'Błąd GPS', true);
-  if (e.code === 1) stop();
+  if (e.code === 1) stop('brak zgody na lokalizację');
 }
 async function notify(kind) {
   if (!LN) return;
@@ -473,44 +495,57 @@ async function prepareNotifications() {
   } catch (e) { }
 }
 async function wake() { try { if (opt('owake') && 'wakeLock' in navigator) S.wake = await navigator.wakeLock.request('screen'); } catch (e) { } }
-async function start() {
+async function addNativeWatcher(attempt = 0) {
+  S.watch = await BG.addWatcher({
+    backgroundTitle: 'Squadrats Live',
+    backgroundMessage: 'Zbieram kafelki. Dotknij, aby wrócić do aplikacji.',
+    requestPermissions: true, stale: false, distanceFilter: 5
+  }, (loc, err) => {
+    if (err) {
+      const em = err.message || err.code || '';
+      logEv('błąd wtyczki GPS: ' + em);
+      if (err.code === 'NOT_AUTHORIZED') { msg('Brak zgody na lokalizację. Otwieram ustawienia, włącz lokalizację dla tej aplikacji.', true); stop('brak zgody na lokalizację'); BG.openSettings(); return; }
+      if (S.tracking && /Service not running/i.test(em) && attempt < 6) { setTimeout(() => { if (S.tracking) addNativeWatcher(attempt + 1).catch(e => logEv('ponowna próba nieudana: ' + (e.message || e))); }, 1500); return; }
+      status('Błąd GPS: ' + em, true);
+      return;
+    }
+    onFix({ coords: { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy }, timestamp: loc.time });
+  });
+}
+async function rewatch() {
+  try { if (S.watch !== null) await BG.removeWatcher({ id: S.watch }); } catch (e) { }
+  S.watch = null;
+  await addNativeWatcher();
+}
+async function start(opts = {}) {
   if (!S.v14.size && !S.v17.size) { $('settings').open = true; msg('Najpierw wgraj plik KML ze Squadrats (przycisk w Ustawieniach), inaczej każdy kafelek wyjdzie jako nowy.', true); return; }
   try { S.audio = S.audio || new (window.AudioContext || window.webkitAudioContext)(); S.audio.resume(); } catch (e) { }
-  if (S.n14.size || S.n17.size) {
+  if (!opts.resume && (S.n14.size || S.n17.size)) {
     for (const k of S.n14) S.v14.add(k);
     for (const k of S.n17) S.v17.add(k);
     S.n14.clear(); S.n17.clear();
     saveBase(); saveLive();
   }
   counts(); redraw();
-  S.tracking = true; S.follow = true; S.last = null;
+  S.tracking = true; S.follow = true; S.last = null; S.lastFixAt = 0; S.fixN = 0;
   if (S.track.length && S.track[S.track.length - 1].length) S.track.push([]);
   $('go').textContent = 'Stop'; $('go').classList.add('on'); status('Szukam sygnału GPS…');
+  logEv(opts.resume ? 'Start: wznowienie po restarcie aplikacji' : 'Start');
+  saveRide(true); rideBeat = Date.now();
   if (NATIVE) {
     try {
       await prepareNotifications();
-      S.watch = await BG.addWatcher({
-        backgroundTitle: 'Squadrats Live',
-        backgroundMessage: 'Zbieram kafelki. Dotknij, aby wrócić do aplikacji.',
-        requestPermissions: true, stale: false, distanceFilter: 5
-      }, (loc, err) => {
-        if (err) {
-          if (err.code === 'NOT_AUTHORIZED') { msg('Brak zgody na lokalizację. Otwieram ustawienia, włącz lokalizację dla tej aplikacji.', true); stop(); BG.openSettings(); }
-          else status('Błąd GPS: ' + (err.message || err.code), true);
-          return;
-        }
-        onFix({ coords: { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy }, timestamp: loc.time });
-      });
-      msg('Śledzenie włączone. Możesz zgasić ekran, kafelki zbierają się w tle.');
-    } catch (e) { msg('Nie udało się uruchomić GPS: ' + (e.message || e), true); stop(); }
+      await addNativeWatcher();
+      msg(opts.resume ? 'Śledzenie wznowione po tym, jak system zamknął aplikację. Fragment trasy z przerwy nie został zapisany.' : 'Śledzenie włączone. Możesz zgasić ekran, kafelki zbierają się w tle.');
+    } catch (e) { msg('Nie udało się uruchomić GPS: ' + (e.message || e), true); stop('błąd startu GPS: ' + (e.message || e)); }
   } else {
-    if (!('geolocation' in navigator)) { msg('Ta przeglądarka nie udostępnia GPS.', true); stop(); return; }
-    if (!window.isSecureContext) { msg('Lokalizacja działa tylko na stronie https.', true); stop(); return; }
+    if (!('geolocation' in navigator)) { msg('Ta przeglądarka nie udostępnia GPS.', true); stop('brak geolokalizacji'); return; }
+    if (!window.isSecureContext) { msg('Lokalizacja działa tylko na stronie https.', true); stop('brak https'); return; }
     S.watch = navigator.geolocation.watchPosition(onFix, onErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
     msg('Śledzenie włączone. Zostaw ekran włączony i stronę na wierzchu.'); wake();
   }
 }
-function stop() {
+function stop(reason = 'ręcznie') {
   const was = S.tracking; S.tracking = false;
   if (S.watch !== null) {
     if (NATIVE) { try { BG.removeWatcher({ id: S.watch }); } catch (e) { } }
@@ -518,11 +553,34 @@ function stop() {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.8');
-  if (was) msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.9');
+  if (was) { logEv('Stop: ' + reason); saveRide(false); }
+  if (was && reason === 'ręcznie') msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
+  else if (was) msg('Śledzenie zatrzymane: ' + reason + '.', true);
   clearTimeout(saveT); DB.set('live', { n14: [...S.n14], n17: [...S.n17] }); saveGoals(); DB.set('track', S.track);
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.tracking && !NATIVE) wake(); });
+document.addEventListener('visibilitychange', () => {
+  const vis = document.visibilityState === 'visible';
+  logEv(vis ? 'ekran: na wierzchu' : 'ekran: w tle');
+  if (vis && S.tracking && !NATIVE) wake();
+  if (vis && S.tracking && NATIVE && S.lastFixAt && Date.now() - S.lastFixAt > 60000) {
+    logEv('odświeżam usługę GPS po powrocie na ekran');
+    rewatch().catch(e => logEv('odświeżenie nieudane: ' + (e.message || e)));
+  }
+});
+document.addEventListener('freeze', () => logEv('WebView zamrożony (freeze)'));
+document.addEventListener('resume', () => logEv('WebView wznowiony (resume)'));
+$('logclr').onclick = () => { LOG.length = 0; $('logbox').textContent = '(pusto)'; DB.set('log', LOG); };
+function maybeResume(ride) {
+  if (NATIVE && ride && ride.active && Date.now() - ride.at < 30 * 60 * 1000) {
+    logEv('Aplikacja uruchomiona ponownie w trakcie jazdy (' + Math.round((Date.now() - ride.at) / 1000) + ' s od ostatniego odczytu)');
+    msg('Wykryto, że jazda została przerwana (system zamknął aplikację). Wznawiam śledzenie…', true);
+    setTimeout(() => start({ resume: true }), 1500);
+    return true;
+  }
+  logEv('Aplikacja uruchomiona');
+  return false;
+}
 
 /* ---------- import KML ---------- */
 async function importKml(file) {
@@ -598,9 +656,10 @@ map.on('click', e => {
 /* ---------- start ---------- */
 (async function init() {
   loadOpts();
-  const base = await DB.get('base'), live = await DB.get('live'), goalsSaved = await DB.get('goals'), trackSaved = await DB.get('track');
+  const base = await DB.get('base'), live = await DB.get('live'), goalsSaved = await DB.get('goals'), trackSaved = await DB.get('track'), logSaved = await DB.get('log'), rideSaved = await DB.get('ride');
   if (base) { S.v14 = new Set(base.v14); S.v17 = new Set(base.v17); }
   if (live) { S.n14 = new Set(live.n14); S.n17 = new Set(live.n17); }
+  if (Array.isArray(logSaved)) { LOG.push(...logSaved.slice(-80)); $('logbox').textContent = LOG.slice(-30).join('\n') || '(pusto)'; }
   if (Array.isArray(trackSaved)) { S.track = trackSaved; S.dist = trackLen(trackSaved); }
   if (goalsSaved) { S.t14 = new Set(goalsSaved.t14); S.t17 = new Set(goalsSaved.t17); S.g14 = new Set(goalsSaved.g14); S.g17 = new Set(goalsSaved.g17); }
   if (S.v14.size) {
@@ -611,7 +670,7 @@ map.on('click', e => {
   if (!S.v14.size && !S.v17.size) $('settings').open = true;
   counts(); redraw();
   window.addEventListener('resize', counts);
-  dbg('aplikacja gotowa · natywna=' + NATIVE + ' · liczba kafelków z pamięci: ' + S.v14.size);
+  maybeResume(rideSaved);
 })();
 </script>
 </body>
