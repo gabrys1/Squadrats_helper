@@ -33,4 +33,4 @@ a workflow zbuduje nowy APK.
 
 ## Autor
 
-Dane autora wpisujesz w aplikacji (Ustawienia i legenda → Ustaw dane autora). Zostają tylko w pamięci telefonu i nie trafiają do repozytorium.
+Dane autora są widoczne w aplikacji: Ustawienia i legenda → O aplikacji.

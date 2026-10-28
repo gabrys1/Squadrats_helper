@@ -90,7 +90,7 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony · wersja 1.11</div>
+  <div id="status">GPS wyłączony · wersja 1.12</div>
   <script>
     window.dbg = function () {};
     window.addEventListener('error', function (e) {
@@ -137,15 +137,15 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
       </details>
       <p class="hint">Jeśli trasa sama się zatrzymuje: Ustawienia Androida → Aplikacje → Squadrats Live → Bateria → „Bez ograniczeń". W widoku ostatnich aplikacji zablokuj kartę Squadrats Live (przytrzymaj kartę → Zablokuj), żeby system jej nie zamykał.</p>
       <div id="about">
-        <b>Squadrats Live</b> · wersja 1.11<br>
+        <b>Squadrats Live</b> · wersja 1.12<br>
         <span id="authorLine">Autor: nie ustawiono</span>
         <details id="authd">
-          <summary>Ustaw dane autora</summary>
+          <summary>Zmień dane autora</summary>
           <div class="authform">
             <input id="auName" type="text" placeholder="Imię i nazwisko" autocomplete="off" maxlength="80">
             <input id="auMail" type="email" placeholder="E-mail" autocomplete="off" maxlength="120">
             <button id="auSave" class="sec">Zapisz na tym telefonie</button>
-            <span>Dane zostają tylko w pamięci tego telefonu. Nie trafiają do kodu ani na GitHub.</span>
+            <span>Zmiana dotyczy tylko tego telefonu.</span>
           </div>
         </details>
         Aplikacja nieoficjalna, niezwiązana ze Squadrats.com. Mapa © autorzy OpenStreetMap.
@@ -573,7 +573,7 @@ function stop(reason = 'ręcznie') {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.11');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.12');
   if (was) { logEv('Stop: ' + reason); saveRide(false); }
   if (was && reason === 'ręcznie') msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
   else if (was) msg('Śledzenie zatrzymane: ' + reason + '.', true);
@@ -674,9 +674,11 @@ map.on('click', e => {
 });
 
 /* ---------- autor (tylko na tym telefonie) ---------- */
+const DEFAULT_AUTHOR = { n: 'Marcin Gabriel', m: 'gabrys1@gmail.com' };
 function renderAuthor() {
-  let a = {};
-  try { a = JSON.parse(localStorage.getItem('author') || '{}') || {}; } catch (e) { }
+  let a = null;
+  try { a = JSON.parse(localStorage.getItem('author') || 'null'); } catch (e) { }
+  if (!a) a = DEFAULT_AUTHOR;
   const parts = [a.n, a.m].filter(Boolean);
   $('authorLine').textContent = parts.length ? 'Autor: ' + parts.join(' · ') : 'Autor: nie ustawiono';
   $('auName').value = a.n || ''; $('auMail').value = a.m || '';
