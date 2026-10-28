@@ -30,3 +30,7 @@ Lokalizacja: najlepiej „Zezwalaj cały czas" (albo „tylko podczas używania 
 
 Cały interfejs jest w `www/index.html`. Po edycji wgraj zmiany na GitHub,
 a workflow zbuduje nowy APK.
+
+## Autor
+
+Marcin ([gabrys1](https://github.com/gabrys1)). Aplikacja nieoficjalna, niezwiązana ze Squadrats.com.
