@@ -76,10 +76,6 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 .hint{font-size:11px;line-height:1.35;color:var(--muted);margin:6px 0 0}
 #about{margin:10px 0 2px;padding-top:8px;border-top:1px solid var(--line);font-size:11px;line-height:1.5;color:var(--muted)}
 #about b{color:var(--fg)}
-#about details{margin:4px 0}
-.authform{display:grid;gap:6px;padding:6px 0}
-.authform input{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--fg);min-width:0}
-.authform .sec{min-height:40px;border-radius:10px}
 #logbox{margin:6px 0;font:10px/1.35 var(--mono);max-height:150px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:6px}
 .vh{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
 .opts .sec{flex:none;width:100%;min-height:40px;border-radius:10px}
@@ -90,7 +86,7 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
 <div id="app">
   <div id="map"></div>
   <canvas id="ov"></canvas>
-  <div id="status">GPS wyłączony · wersja 1.12</div>
+  <div id="status">GPS wyłączony · wersja 1.13</div>
   <script>
     window.dbg = function () {};
     window.addEventListener('error', function (e) {
@@ -137,17 +133,8 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;padding:2px 0}
       </details>
       <p class="hint">Jeśli trasa sama się zatrzymuje: Ustawienia Androida → Aplikacje → Squadrats Live → Bateria → „Bez ograniczeń". W widoku ostatnich aplikacji zablokuj kartę Squadrats Live (przytrzymaj kartę → Zablokuj), żeby system jej nie zamykał.</p>
       <div id="about">
-        <b>Squadrats Live</b> · wersja 1.12<br>
-        <span id="authorLine">Autor: nie ustawiono</span>
-        <details id="authd">
-          <summary>Zmień dane autora</summary>
-          <div class="authform">
-            <input id="auName" type="text" placeholder="Imię i nazwisko" autocomplete="off" maxlength="80">
-            <input id="auMail" type="email" placeholder="E-mail" autocomplete="off" maxlength="120">
-            <button id="auSave" class="sec">Zapisz na tym telefonie</button>
-            <span>Zmiana dotyczy tylko tego telefonu.</span>
-          </div>
-        </details>
+        <b>Squadrats Live</b> · wersja 1.13<br>
+        Autor: Marcin Gabriel · gabrys1@gmail.com<br>
         Aplikacja nieoficjalna, niezwiązana ze Squadrats.com. Mapa © autorzy OpenStreetMap.
       </div>
       <div class="legend">
@@ -573,7 +560,7 @@ function stop(reason = 'ręcznie') {
   }
   S.watch = null;
   try { S.wake && S.wake.release(); } catch (e) { } S.wake = null;
-  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.12');
+  $('go').textContent = 'Start'; $('go').classList.remove('on'); status('GPS wyłączony · wersja 1.13');
   if (was) { logEv('Stop: ' + reason); saveRide(false); }
   if (was && reason === 'ręcznie') msg('Zatrzymano. Nowe kafelki zostały zapisane na tym telefonie.');
   else if (was) msg('Śledzenie zatrzymane: ' + reason + '.', true);
@@ -673,26 +660,9 @@ map.on('click', e => {
   counts(); redraw(); saveGoals();
 });
 
-/* ---------- autor (tylko na tym telefonie) ---------- */
-const DEFAULT_AUTHOR = { n: 'Marcin Gabriel', m: 'gabrys1@gmail.com' };
-function renderAuthor() {
-  let a = null;
-  try { a = JSON.parse(localStorage.getItem('author') || 'null'); } catch (e) { }
-  if (!a) a = DEFAULT_AUTHOR;
-  const parts = [a.n, a.m].filter(Boolean);
-  $('authorLine').textContent = parts.length ? 'Autor: ' + parts.join(' · ') : 'Autor: nie ustawiono';
-  $('auName').value = a.n || ''; $('auMail').value = a.m || '';
-}
-$('auSave').onclick = () => {
-  try { localStorage.setItem('author', JSON.stringify({ n: $('auName').value.trim().slice(0, 80), m: $('auMail').value.trim().slice(0, 120) })); }
-  catch (e) { msg('Nie udało się zapisać danych autora na tym telefonie.', true); return; }
-  renderAuthor(); $('authd').open = false;
-};
-
 /* ---------- start ---------- */
 (async function init() {
   loadOpts();
-  renderAuthor();
   const base = await DB.get('base'), live = await DB.get('live'), goalsSaved = await DB.get('goals'), trackSaved = await DB.get('track'), logSaved = await DB.get('log'), rideSaved = await DB.get('ride');
   if (base) { S.v14 = new Set(base.v14); S.v17 = new Set(base.v17); }
   if (live) { S.n14 = new Set(live.n14); S.n17 = new Set(live.n17); }
